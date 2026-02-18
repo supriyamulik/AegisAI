@@ -1,0 +1,135 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────
+# AegisAI – Full Stack Docker Compose
+# Run: docker-compose up --build
+# Dashboard: http://localhost:3000
+# API:       http://localhost:8000
+# API Docs:  http://localhost:8000/docs
+# ─────────────────────────────────────────────
+
+services:
+
+  # ── FastAPI Backend ──
+  aegisai-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: aegisai-api
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://aegis:aegis123@postgres:5432/aegisai
+      - REDIS_URL=redis://redis:6379
+      - KAFKA_BOOTSTRAP=kafka:9092
+      - ENV=production
+    volumes:
+      - ./backend:/app
+      - aegisai-data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - aegisai-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── PostgreSQL (production DB) ──
+  postgres:
+    image: postgres:15-alpine
+    container_name: aegisai-postgres
+    environment:
+      POSTGRES_DB: aegisai
+      POSTGRES_USER: aegis
+      POSTGRES_PASSWORD: aegis123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aegis -d aegisai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aegisai-net
+
+  # ── Redis (caching + real-time pub/sub) ──
+  redis:
+    image: redis:7-alpine
+    container_name: aegisai-redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - aegisai-net
+
+  # ── Kafka (telemetry ingestion at scale) ──
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: aegisai-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - aegisai-net
+    profiles:
+      - kafka  # only starts with: docker-compose --profile kafka up
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: aegisai-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    networks:
+      - aegisai-net
+    profiles:
+      - kafka
+
+  # ── Kafka topics init ──
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      - kafka
+    command: >
+      bash -c "
+        kafka-topics --create --if-not-exists --topic ml-telemetry --bootstrap-server kafka:9092 --partitions 3 --replication-factor 1 &&
+        kafka-topics --create --if-not-exists --topic llm-telemetry --bootstrap-server kafka:9092 --partitions 3 --replication-factor 1 &&
+        kafka-topics --create --if-not-exists --topic governance-actions --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1 &&
+        echo 'Kafka topics created!'
+      "
+    networks:
+      - aegisai-net
+    profiles:
+      - kafka
+
+volumes:
+  postgres-data:
+  redis-data:
+  aegisai-data:
+
+networks:
+  aegisai-net:
+    driver: bridge
