@@ -52,6 +52,15 @@ forecaster = RiskForecaster()
     # thread = threading.Thread(target=background_data_evolution, daemon=True)
     # thread.start()
     # print("🔄 Background data evolution started (models will change over time)")
+@app.on_event("startup")
+async def startup_event():
+    init_db()
+    from seed_data import seed_demo_data
+    seed_demo_data()
+    print("✅ AegisAI initialized — database ready")
+    
+    # Background evolution stays OFF — real data comes from Colab
+    print("✅ Real data mode — waiting for Colab notebook to push metrics")
 
 
 # ─────────────────────────────────────────────
