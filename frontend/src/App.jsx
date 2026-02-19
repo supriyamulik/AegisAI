@@ -10,7 +10,7 @@ import {
 // API CONFIG — point this at your FastAPI server
 // ─────────────────────────────────────────────
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = "https://aegisai-ta6m.onrender.com";
 
 // Helper: derive a display-friendly "status" from governance actions + risk level
 function deriveStatus(modelId, riskLevel, governanceActions) {
