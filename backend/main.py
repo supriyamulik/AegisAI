@@ -41,17 +41,26 @@ audit_logger = AuditLogger()
 forecaster = RiskForecaster()
 
 
+# @app.on_event("startup")
+# async def startup_event():
+#     init_db()
+#     from seed_data import seed_demo_data
+#     seed_demo_data()
+#     print("✅ AegisAI initialized — database ready with demo data")
+    
+    # # Start background thread to evolve data
+    # thread = threading.Thread(target=background_data_evolution, daemon=True)
+    # thread.start()
+    # print("🔄 Background data evolution started (models will change over time)")
 @app.on_event("startup")
 async def startup_event():
     init_db()
     from seed_data import seed_demo_data
     seed_demo_data()
-    print("✅ AegisAI initialized — database ready with demo data")
+    print("✅ AegisAI initialized — database ready")
     
-    # Start background thread to evolve data
-    thread = threading.Thread(target=background_data_evolution, daemon=True)
-    thread.start()
-    print("🔄 Background data evolution started (models will change over time)")
+    # Background evolution stays OFF — real data comes from Colab
+    print("✅ Real data mode — waiting for Colab notebook to push metrics")
 
 
 # ─────────────────────────────────────────────
